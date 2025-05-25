@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cheating Detection - Audio + Tab + Keyboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      background: #f9f9f9;
+    }
+    h1 {
+      color: #333;
+    }
+    #status, #alert, #exam-content {
+      font-size: 1.2rem;
+      margin-top: 15px;
+    }
+    #alert {
+      font-weight: bold;
+    }
+    #exam-ended {
+      color: red;
+      font-weight: bold;
+      display: none;
+      margin-top: 30px;
+    }
+    input {
+      padding: 8px;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Exam In Progress</h1>
+  <p id="status">Microphone Status: Waiting...</p>
+  <p id="alert">Alert: None</p>
+
+  <div id="exam-content">
+    <p>Question: What is 10 + 5?</p>
+    <input type="text" placeholder="Your Answer" />
+  </div>
+
+  <p id="exam-ended">❌ Exam Ended Due to Cheating!</p>
+
+  <script>
+    let examEnded = false;
+
+    function endExam(reason) {
+      if (examEnded) return;
+      examEnded = true;
+
+      document.getElementById("exam-content").innerHTML = "";
+      document.getElementById("exam-ended").style.display = "block";
+      document.getElementById("alert").innerText = "Alert: " + reason;
+      document.getElementById("alert").style.color = "red";
+
+      console.warn("Exam ended - Reason:", reason);
+    }
+
+    async function startAudioDetection() {
+      const statusText = document.getElementById("status");
+      const alertText = document.getElementById("alert");
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        statusText.innerText = "Microphone Status: Access Granted";
+
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        const dataArray = new Uint8Array(analyser.fftSize);
+        source.connect(analyser);
+
+        function checkAudioLevel() {
+          if (examEnded) return;
+
+          analyser.getByteTimeDomainData(dataArray);
+          let total = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            const val = (dataArray[i] - 128) / 128;
+            total += val * val;
+          }
+
+          const rms = Math.sqrt(total / dataArray.length);
+          const threshold = 0.1;
+
+          if (rms > threshold) {
+            endExam("Background audio detected");
+          } else {
+            alertText.innerText = "Alert: None";
+            alertText.style.color = "green";
+            requestAnimationFrame(checkAudioLevel);
+          }
+        }
+
+        checkAudioLevel();
+      } catch (err) {
+        statusText.innerText = "Microphone Status: Access Denied or Error";
+        alertText.innerText = "Error: Microphone access blocked";
+        alertText.style.color = "red";
+        console.error("Microphone error:", err);
+      }
+    }
+
+    function startTabChangeDetection() {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && !examEnded) {
+          endExam("User switched tab or minimized the browser");
+        }
+      });
+    }
+
+    function startKeyboardShortcutDetection() {
+      document.addEventListener("keydown", (e) => {
+        if (examEnded) return;
+
+        // Detect common cheating shortcut keys
+        if (
+          e.ctrlKey || e.altKey || e.metaKey || // Ctrl, Alt, ⌘
+          e.key === "F12" ||                    // Dev Tools
+          e.key === "Tab" ||                    // Alt+Tab
+          e.key === "Escape" ||                 // Esc
+          (e.shiftKey && e.key === "I") ||      // Shift+I for Dev Tools
+          (e.ctrlKey && e.key.toLowerCase() === "u") || // Ctrl+U for source
+          (e.ctrlKey && e.key.toLowerCase() === "s")    // Ctrl+S to save
+        ) {
+          endExam("Unauthorized keyboard shortcut detected");
+        }
+      });
+    }
+
+    // Start all detection systems
+    startAudioDetection();
+    startTabChangeDetection();
+    startKeyboardShortcutDetection();
+  </script>
+</body>
+</html>
